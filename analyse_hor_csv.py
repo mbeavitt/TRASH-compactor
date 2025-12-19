@@ -4,6 +4,14 @@ import pandas as pd
 import os
 import argparse
 
+def hamming_dist_from_cons(repeats):
+    """
+    takes a list of repeat sequences and finds the total hamming distance
+    from the consensus
+    """
+
+    print(repeats[:5])
+
 parser = argparse.ArgumentParser(
                     prog='hor-analysis',
                     description='Analyses output of TRASH',
@@ -40,4 +48,6 @@ with open("summary.tsv", "w") as file:
         print(run_id, end='\t', file=file)
         print(len(hor_table['sequence']), end='\t', file=file)
         print(len(list(set(hor_table['sequence']))), end='\n', file=file)
+
+        hamming_dist_from_cons(hor_table['sequence'])
 
