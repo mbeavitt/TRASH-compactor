@@ -21,14 +21,13 @@ def get_consensus(repeats):
     consensus = [max(i, key=lambda key: i[key]) for i in repeat_cons_vals]
     return ''.join(consensus)
 
-def hamming_dist_from_cons(repeats):
+def hamming_dist_from_cons(repeats, consensus):
     """
     takes a list of repeat sequences and finds the total hamming distance
     from the consensus. Warning, needs modifications to work on TRASH output
     from real files (i.e. not perfect 178bp sequences)
     """
 
-    consensus = get_consensus(repeats)
     distances = [Levenshtein.distance(repeat, CEN178_CONS) for repeat in repeats]
     return sum(distances)
 
@@ -41,32 +40,30 @@ parser.add_argument('input_table')
 
 args = parser.parse_args()
 
-'''
-example = args.input[0]
+summary_table = pd.DataFrame(columns = ["run_id", "num_seqs", "num_unique_seqs", "total_hamming_distance", consensus])
 
-hor_table = pd.read_csv(example)
-print(hor_table.head())
-print(list(hor_table.columns))
-'''
+input_table = pd.read_csv(args.input_table, sep='\t', header=None)
+file_paths = list(input_table.iloc[:, 1])
 
-with open("summary.tsv", "w") as file:
-    print("run_id", end='\t', file=file)
-    print("num_seqs", end='\t', file=file)
-    print("num_unique_seqs", end='\t', file=file)
-    print("total hamming distance", end='\n', file=file)
+for index, line in input_table.iterrows():
+    run_id = line[0]
+    path = line[1]
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Could not find input TRASH table: {path}")
 
-    input_table = pd.read_csv(args.input_table, sep='\t', header=None)
-    file_paths = list(input_table.iloc[:, 1])
+    hor_table = pd.read_csv(path)
+    repeats_list = hor_table['sequence']
 
-    for index, line in input_table.iterrows():
-        run_id = line[0]
-        path = line[1]
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Could not find input TRASH table: {path}")
+    consensus = get_consensus(repeats_list)
 
-        hor_table = pd.read_csv(path)
+    summary_table_row = pd.DataFrame([[
+        run_id,
+        len(repeats_list),
+        len(list(set(repeats_list))),
+        hamming_dist_from_cons(repeats_list, consensus),
+        consensus
+    ]], columns=summary_table.columns)
 
-        print(run_id, end='\t', file=file)
-        print(len(hor_table['sequence']), end='\t', file=file)
-        print(len(list(set(hor_table['sequence']))), end='\t', file=file)
-        print(hamming_dist_from_cons(hor_table['sequence']), end='\n', file=file)
+    summary_table = pd.concat([summary_table, summary_table_row], ignore_index=True)
+
+print(summary_table)
