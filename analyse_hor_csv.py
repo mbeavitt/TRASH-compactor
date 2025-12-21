@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
  
+import seaborn as sns
+import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import argparse
@@ -60,8 +62,8 @@ for index, line in input_table.iterrows():
 
     summary_rows.append({
         "run_id": run_id,
-        "num_seqs": len(repeats_list),
-        "num_unique_seqs": len(list(set(repeats_list))),
+        "num_repeats": len(repeats_list),
+        "num_unique_repeats": len(list(set(repeats_list))),
         "local_consensus_distance_sum": hamming_dist_from_cons(repeats_list, consensus),
         "local_consensus_sequence": consensus,
         "local_consensus_dist_from_seed": Levenshtein.distance(CEN178_CONS, consensus),
@@ -72,3 +74,10 @@ summary_table = pd.DataFrame(summary_rows)
 
 print(summary_table)
 summary_table.to_csv("summary.tsv", sep='\t', index=False)
+
+# todo:
+# - histogram (distribution) of average HOR values per run
+# - above but scaled to number of repeats
+# - distribution of distances from local consensus (overall array diversity)
+# - distribution of distances from seed sequence (rate of change in diversity over time)
+# - Some kind of 
