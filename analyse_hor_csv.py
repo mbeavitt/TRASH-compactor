@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import argparse
+import utils
 import Levenshtein
 
 pd.set_option('display.max_columns', None)
@@ -19,19 +20,9 @@ parser.add_argument('input')
 
 args = parser.parse_args()
 
-input_table = pd.read_csv(args.input)
-input_table = input_table.drop("block.B.size.bp", axis='columns')
-input_table = input_table.drop("Unnamed: 0", axis='columns')
-input_table = input_table.drop("end_A", axis='columns')
-input_table = input_table.drop("end_B", axis='columns')
-input_table = input_table.drop("direction.1.para_2.perp.", axis='columns')
-input_table = input_table.drop("start.A.bp", axis='columns')
-input_table = input_table.drop("start.B.bp", axis='columns')
-input_table = input_table.drop("end.A.bp", axis='columns')
-input_table = input_table.drop("end.B.bp", axis='columns')
-input_table = input_table.drop("chrA", axis='columns')
-input_table = input_table.drop("chrB", axis='columns')
-input_table = input_table.rename(columns={"start_A": "start"})
-input_table = input_table.rename(columns={"start_B": "end"})
+input_table = utils.import_hor_table(args.input)
 
 print(input_table.head())
+print(len(input_table))
+
+num_hors = len(input_table)
