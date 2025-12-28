@@ -57,35 +57,6 @@ for hor_unit in split_hor_repeats:
 print("\nAtomic HOR representation:")
 print(hor_atomic)
 
-# Verify assumption: within each HOR unit, no adjacent repeats have distance > 3
-max_adjacent_distance_in_unit = 0
-violations_in_units = []
-
-for unit_idx, hor_unit in enumerate(split_hor_repeats):
-    for pos in range(len(hor_unit) - 1):
-        seq1 = hor_unit[pos]
-        seq2 = hor_unit[pos + 1]
-
-        dist = Levenshtein.distance(seq1, seq2)
-
-        if dist > max_adjacent_distance_in_unit:
-            max_adjacent_distance_in_unit = dist
-
-        if dist > 3:
-            violations_in_units.append({
-                'unit_idx': unit_idx,
-                'position_in_unit': pos,
-                'distance': dist
-            })
-
-print(f"\nMax distance between adjacent repeats within a unit: {max_adjacent_distance_in_unit}")
-if violations_in_units:
-    print(f"Found {len(violations_in_units)} violations where adjacent distance > 3 within a unit:")
-    for v in violations_in_units[:10]:
-        print(f"  Unit {v['unit_idx']}, position {v['position_in_unit']}: distance = {v['distance']}")
-else:
-    print("✓ Assumption verified: all adjacent repeats within units have distance <= 3")
-
 # Visualize the atomic HOR representation
 # Project unique repeat sequences into RGB color space using MDS
 n_unique = len(unique_repeats)
@@ -105,6 +76,8 @@ rgb_coords = mds.fit_transform(distance_matrix)
 # Normalize to [0, 1] range for RGB values
 scaler = MinMaxScaler()
 rgb_coords = scaler.fit_transform(rgb_coords)
+# Clip to ensure values are exactly within [0, 1] (avoid floating point errors)
+rgb_coords = np.clip(rgb_coords, 0, 1)
 
 # Create RGB array for the visualization
 # Each repeat gets a color based on its sequence, not its position
@@ -128,6 +101,7 @@ legend_elements = [plt.Rectangle((0, 0), 1, 1, facecolor=rgb_coords[i],
 ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.15, 1), fontsize=8)
 
 plt.tight_layout()
+print(hor_table.sort_values(by=['total_variant']).:
 plt.show()
 
 #for i in range(len(hor_table)):
