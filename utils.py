@@ -9,17 +9,18 @@ def import_hor_table(table_path):
 
     input_table = input_table.drop("block.B.size.bp", axis='columns')
     input_table = input_table.drop("Unnamed: 0", axis='columns')
+    input_table = input_table.drop("start_A", axis='columns')
     input_table = input_table.drop("start_B", axis='columns')
     input_table = input_table.drop("end_A", axis='columns')
+    input_table = input_table.drop("end_B", axis='columns')
     input_table = input_table.drop("direction.1.para_2.perp.", axis='columns')
-    input_table = input_table.drop("start.A.bp", axis='columns')
     input_table = input_table.drop("start.B.bp", axis='columns')
     input_table = input_table.drop("end.A.bp", axis='columns')
-    input_table = input_table.drop("end.B.bp", axis='columns')
     input_table = input_table.drop("chrA", axis='columns')
     input_table = input_table.drop("chrB", axis='columns')
-    input_table = input_table.rename(columns={"start_A": "start"})
-    input_table = input_table.rename(columns={"end_B": "end"})
+    input_table = input_table.rename(columns={"start.A.bp": "start"})
+    input_table = input_table.rename(columns={"end.B.bp": "end"})
+    input_table['start'] = input_table['start'] - 1 # convert to 0 based
 
     return input_table
 
