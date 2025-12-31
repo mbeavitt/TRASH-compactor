@@ -28,13 +28,14 @@ pd.set_option('display.width', 1000)
 class HORhouse:
     """Interactive HOR analysis tool"""
 
-    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output", cache_only=False):
+    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output", cache_only=False, color_method='umap'):
         self.hor_table_path = hor_table_path
         self.fasta_path = fasta_path
         self.repeats_table_path = repeats_table_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.cache_only = cache_only
+        self.color_method = color_method.lower()
 
         print("Welcome to HORhouse")
         print(f"Output directory: {self.output_dir}")
@@ -352,15 +353,22 @@ class HORhouse:
                 global_distance_matrix[i, j] = dist
                 global_distance_matrix[j, i] = dist
 
-        # Project to 3D RGB space using UMAP (or MDS if UMAP not available)
-        if HAS_UMAP:
+        # Project to 3D RGB space using UMAP or MDS
+        if self.color_method == 'umap' and HAS_UMAP:
             print(f"  Projecting to 3D color space using UMAP...")
             # UMAP is much faster than MDS and often gives better embeddings
+            import warnings
+            warnings.filterwarnings('ignore', message='using precomputed metric')
+            warnings.filterwarnings('ignore', message='n_jobs value')
+            warnings.filterwarnings('ignore', message='Graph is not fully connected')
+
             reducer = UMAP(
                 n_components=3,
                 metric='precomputed',
                 n_neighbors=min(15, n_global - 1),
                 min_dist=0.1,
+                n_jobs=1,  # Explicit to avoid warning
+                init='random',  # Avoid spectral init issues
                 random_state=42
             )
             rgb_coords = reducer.fit_transform(global_distance_matrix)
@@ -372,6 +380,8 @@ class HORhouse:
                 metric='precomputed',
                 n_neighbors=min(15, n_global - 1),
                 min_dist=0.1,
+                n_jobs=1,
+                init='random',
                 random_state=42
             )
             coords_2d = reducer_2d.fit_transform(global_distance_matrix)
@@ -390,7 +400,9 @@ class HORhouse:
             plt.close()
             print(f"  Saved 2D UMAP plot to {umap_plot_path}")
         else:
-            print(f"  Projecting to 3D color space using MDS (slower)...")
+            if self.color_method == 'umap' and not HAS_UMAP:
+                print(f"  UMAP not available, falling back to MDS. Install with: pip install umap-learn")
+            print(f"  Projecting to 3D color space using MDS...")
             mds = MDS(n_components=3, metric='precomputed', n_init=1, init='random', random_state=42)
             rgb_coords = mds.fit_transform(global_distance_matrix)
 
@@ -704,10 +716,13 @@ def main():
     parser.add_argument('--chromosome', help='Chromosome name (required for multi-sequence FASTA, optional for single-sequence)')
     parser.add_argument('--output', default='horhouse_output', help='Output directory (default: horhouse_output)')
     parser.add_argument('--cache-only', action='store_true', help='Only calculate and cache results, do not enter interactive mode')
+    parser.add_argument('--color-method', choices=['umap', 'mds'], default='umap',
+                       help='Method for projecting sequences to RGB color space (default: umap)')
 
     args = parser.parse_args()
 
-    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output, cache_only=args.cache_only)
+    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output,
+                   cache_only=args.cache_only, color_method=args.color_method)
 
     if not args.cache_only:
         app.run()
