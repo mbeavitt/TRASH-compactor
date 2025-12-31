@@ -196,12 +196,13 @@ def calculate_input_hash(hor_table_path, fasta_path, repeats_table_path):
     return hasher.hexdigest()
 
 
-def get_cache_path(input_hash, output_dir):
+def get_cache_path(input_hash, cache_dir=None):
     """
     Get the cache file path for a given input hash.
-    Cache is stored in the output directory.
+    Cache is stored in current working directory by default.
     """
-    cache_dir = os.path.join(output_dir, '.cache')
+    if cache_dir is None:
+        cache_dir = os.path.join(os.getcwd(), '.horhouse_cache')
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(cache_dir, f'hor_table_{input_hash}.csv')
 
