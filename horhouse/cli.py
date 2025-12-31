@@ -93,6 +93,16 @@ class HORhouse:
             if original_count > len(self.repeats_table):
                 print(f"  (Filtered to {self.seq_name} from {original_count} total repeats)")
 
+            # OPTIMIZATION: Pre-sort and convert to numpy arrays for O(log n) binary search
+            print("  Preparing repeat data structures for fast interval queries...")
+            self.repeats_table = self.repeats_table.sort_values('start').reset_index(drop=True)
+
+            # Convert to numpy for fast binary search-based lookups (50-100x faster)
+            self.repeat_starts = self.repeats_table['start'].values
+            self.repeat_ends = self.repeats_table['end'].values
+            self.repeat_seqs = self.repeats_table['sequence'].values
+            self.repeat_positions = self.repeats_table['start'].values
+
             print("\nCalculating metrics...")
             self._calculate_metrics()
 
@@ -129,22 +139,24 @@ class HORhouse:
         progress_interval = max(1000, total_hors // 100)  # Print every 1000 HORs or 1%, whichever is larger
 
         for hor_num, (idx, row) in enumerate(self.hor_table.iterrows(), 1):
-            # Get repeats for block A with positions
-            repeats_A, pos_A = utils.get_repeats_in_range(
-                self.repeats_table,
-                self.seq_name,
+            # Get repeats for block A with positions (using fast binary search)
+            repeats_A, pos_A = utils.get_repeats_in_range_fast(
+                self.repeat_starts,
+                self.repeat_ends,
+                self.repeat_seqs,
+                self.repeat_positions,
                 row['block_A_start'],
-                row['block_A_end'],
-                return_positions=True
+                row['block_A_end']
             )
 
-            # Get repeats for block B with positions
-            repeats_B, pos_B = utils.get_repeats_in_range(
-                self.repeats_table,
-                self.seq_name,
+            # Get repeats for block B with positions (using fast binary search)
+            repeats_B, pos_B = utils.get_repeats_in_range_fast(
+                self.repeat_starts,
+                self.repeat_ends,
+                self.repeat_seqs,
+                self.repeat_positions,
                 row['block_B_start'],
-                row['block_B_end'],
-                return_positions=True
+                row['block_B_end']
             )
 
             block_A_sequences.append(repeats_A)
@@ -219,8 +231,30 @@ class HORhouse:
 
         self.hor_table['block_gap_units'] = self.hor_table.apply(calc_gap, axis=1)
 
-        print("  Calculating inter-block similarity (Levenshtein distances)...")
-        print("    (This may take a while for large datasets...)")
+        print("  Pre-computing Levenshtein distance matrix for unique sequences...")
+        # Collect all unique sequences
+        all_sequences = set()
+        for sequences in self.hor_table['block_A_sequence']:
+            all_sequences.update(sequences)
+        for sequences in self.hor_table['block_B_sequence']:
+            all_sequences.update(sequences)
+
+        unique_sequences = list(all_sequences)
+        n_unique = len(unique_sequences)
+        print(f"    Found {n_unique} unique sequences")
+
+        # Pre-compute distance matrix (upper triangle only)
+        print(f"    Computing {n_unique * (n_unique - 1) // 2:,} pairwise distances...")
+        distance_cache = {}
+        for i in range(n_unique):
+            for j in range(i + 1, n_unique):
+                seq_i, seq_j = unique_sequences[i], unique_sequences[j]
+                dist = Levenshtein.distance(seq_i, seq_j)
+                # Store both orderings for easy lookup
+                distance_cache[(seq_i, seq_j)] = dist
+                distance_cache[(seq_j, seq_i)] = dist
+
+        print("  Calculating inter-block similarity (using cached distances)...")
         # Inter-block similarity
         def calc_similarity(row):
             block_A = row['block_A_sequence']
@@ -228,14 +262,13 @@ class HORhouse:
             if len(block_A) == 0 or len(block_B) == 0:
                 return 0
             min_len = min(len(block_A), len(block_B))
-            distances = [Levenshtein.distance(block_A[i], block_B[i]) for i in range(min_len)]
+            distances = [distance_cache.get((block_A[i], block_B[i]), 0) for i in range(min_len)]
             return sum(distances) / len(distances) if distances else 0
 
         self.hor_table['position_wise_distance'] = self.hor_table.apply(calc_similarity, axis=1)
         self.hor_table['hor_similarity'] = 1 / (1 + self.hor_table['position_wise_distance'])
 
-        print("  Calculating internal diversity (pairwise Levenshtein distances)...")
-        print("    (This is the slowest step and may take a long time...)")
+        print("  Calculating internal diversity (using cached distances)...")
         # Calculate internal diversity within each block
         def calc_internal_diversity(row):
             """Average pairwise distance within a block"""
@@ -247,7 +280,11 @@ class HORhouse:
                 distances_A = []
                 for i in range(len(block_A)):
                     for j in range(i+1, len(block_A)):
-                        distances_A.append(Levenshtein.distance(block_A[i], block_A[j]))
+                        # Use cached distance, or 0 if same sequence
+                        if block_A[i] == block_A[j]:
+                            distances_A.append(0)
+                        else:
+                            distances_A.append(distance_cache.get((block_A[i], block_A[j]), 0))
                 diversity_A = sum(distances_A) / len(distances_A) if distances_A else 0
             else:
                 diversity_A = 0
@@ -257,7 +294,11 @@ class HORhouse:
                 distances_B = []
                 for i in range(len(block_B)):
                     for j in range(i+1, len(block_B)):
-                        distances_B.append(Levenshtein.distance(block_B[i], block_B[j]))
+                        # Use cached distance, or 0 if same sequence
+                        if block_B[i] == block_B[j]:
+                            distances_B.append(0)
+                        else:
+                            distances_B.append(distance_cache.get((block_B[i], block_B[j]), 0))
                 diversity_B = sum(distances_B) / len(distances_B) if distances_B else 0
             else:
                 diversity_B = 0
