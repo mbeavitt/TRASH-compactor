@@ -2,6 +2,8 @@
 
 Interactive analysis and visualization tool for Higher Order Repeats (HORs) in genomic sequences.
 
+Designed to work with TRASH output files for downstream HOR analysis and quality filtering.
+
 ## Installation
 
 ```bash
@@ -10,15 +12,20 @@ pip install .
 
 ## Usage
 
+HORhouse uses TRASH output files as input:
+
 ```bash
-horhouse --input HORs.csv --fasta genome.fa --repeats repeats.csv --chromosome Chr1
+horhouse --input HORs_sample.fa_Chr1_CEN178.csv \
+         --fasta sample.fa \
+         --repeats all.repeats.from.sample.CEN178.csv \
+         --chromosome Chr1
 ```
 
 ### Required Arguments
 
-- `--input`: HOR table CSV file
-- `--fasta`: Reference genome FASTA file
-- `--repeats`: Repeats table CSV file with columns: seq_name, start, end, sequence
+- `--input`: TRASH HOR table output (e.g., `HORs_sample.fa_Chr1_CEN178.csv`)
+- `--fasta`: Reference genome FASTA file (same file used for TRASH)
+- `--repeats`: TRASH repeats table output (e.g., `all.repeats.from.sample.CEN178.csv`)
 
 ### Optional Arguments
 
