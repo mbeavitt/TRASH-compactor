@@ -21,18 +21,37 @@ pd.set_option('display.width', 1000)
 class HORhouse:
     """Interactive HOR analysis tool"""
 
-    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output"):
+    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output", cache_only=False):
         self.hor_table_path = hor_table_path
         self.fasta_path = fasta_path
         self.repeats_table_path = repeats_table_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.cache_only = cache_only
 
         print("Welcome to HORhouse")
         print(f"Output directory: {self.output_dir}")
+
+        # Calculate cache hash based on input files
+        print("\nChecking cache...")
+        input_hash = utils.calculate_input_hash(hor_table_path, fasta_path, repeats_table_path)
+        cache_path = utils.get_cache_path(input_hash, str(self.output_dir))
+
+        # Try to load from cache
+        cached_table = utils.load_cache(cache_path)
+        use_cache = cached_table is not None
+
+        if use_cache:
+            print(f"Cache found! Loading cached results...")
+            self.hor_table = cached_table
+        else:
+            print("No cache found, will calculate from scratch...")
+
         print("\nLoading data...")
 
-        self.hor_table = utils.import_hor_table(hor_table_path)
+        if not use_cache:
+            self.hor_table = utils.import_hor_table(hor_table_path)
+
         self.repeats_table = utils.import_repeats_table(repeats_table_path)
         self.fasta = utils.read_fasta(fasta_path)
 
@@ -65,18 +84,34 @@ class HORhouse:
             print(f"Selected chromosome: {self.seq_name}")
 
         # Pre-filter repeats table to only the chromosome we're analyzing (performance optimization)
-        original_count = len(self.repeats_table)
-        self.repeats_table = self.repeats_table[
-            self.repeats_table['seq_name'] == self.seq_name
-        ].copy()
-        print(f"Loaded {len(self.repeats_table)} repeats from repeats table")
-        if original_count > len(self.repeats_table):
-            print(f"  (Filtered to {self.seq_name} from {original_count} total repeats)")
+        if not use_cache:
+            original_count = len(self.repeats_table)
+            self.repeats_table = self.repeats_table[
+                self.repeats_table['seq_name'] == self.seq_name
+            ].copy()
+            print(f"Loaded {len(self.repeats_table)} repeats from repeats table")
+            if original_count > len(self.repeats_table):
+                print(f"  (Filtered to {self.seq_name} from {original_count} total repeats)")
 
-        print("Calculating metrics...")
-        self._calculate_metrics()
+            print("\nCalculating metrics...")
+            self._calculate_metrics()
 
-        print("Computing global repeat colors...")
+            print("\nSaving cache...")
+            utils.save_cache(self.hor_table, cache_path)
+
+            # If cache-only mode, we're done - skip color computation and interactive setup
+            if self.cache_only:
+                print("Cache created successfully!")
+                return
+        else:
+            # Still need to filter repeats table for visualization later
+            original_count = len(self.repeats_table)
+            self.repeats_table = self.repeats_table[
+                self.repeats_table['seq_name'] == self.seq_name
+            ].copy()
+            print(f"Loaded {len(self.repeats_table)} repeats from repeats table (for visualization)")
+
+        print("\nComputing global repeat colors...")
         self._compute_global_colors()
 
         self.current_selection = None
@@ -122,15 +157,18 @@ class HORhouse:
                 percent = (hor_num / total_hors) * 100
                 print(f"  Processed {hor_num:,}/{total_hors:,} HORs ({percent:.1f}%)")
 
+        print("  Adding sequences and positions to table...")
         self.hor_table['block_A_sequence'] = block_A_sequences
         self.hor_table['block_B_sequence'] = block_B_sequences
         self.hor_table['block_A_positions'] = block_A_positions
         self.hor_table['block_B_positions'] = block_B_positions
 
+        print("  Calculating repeat counts...")
         # Add columns for actual repeat counts found
         self.hor_table['actual_repeats_A'] = self.hor_table['block_A_sequence'].apply(len)
         self.hor_table['actual_repeats_B'] = self.hor_table['block_B_sequence'].apply(len)
 
+        print("  Flagging mismatches...")
         # Flag HORs with repeat count mismatches
         self.hor_table['repeat_mismatch_A'] = (
             self.hor_table['actual_repeats_A'] != self.hor_table['block.size.in.units']
@@ -572,11 +610,16 @@ def main():
     parser.add_argument('--repeats', required=True, help='Repeats table CSV file (e.g., test_data.csv or all.repeats.csv)')
     parser.add_argument('--chromosome', help='Chromosome name (required for multi-sequence FASTA, optional for single-sequence)')
     parser.add_argument('--output', default='horhouse_output', help='Output directory (default: horhouse_output)')
+    parser.add_argument('--cache-only', action='store_true', help='Only calculate and cache results, do not enter interactive mode')
 
     args = parser.parse_args()
 
-    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output)
-    app.run()
+    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output, cache_only=args.cache_only)
+
+    if not args.cache_only:
+        app.run()
+    else:
+        print("\nCache-only mode: Exiting without entering interactive CLI.")
 
 
 if __name__ == '__main__':

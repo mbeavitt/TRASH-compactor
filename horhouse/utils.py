@@ -1,4 +1,6 @@
 import pandas as pd
+import hashlib
+import os
 
 def import_hor_table(table_path):
     """
@@ -127,3 +129,68 @@ def select_sequence_by_name(fasta_list, chromosome_name):
             return entry['sequence']
 
     return None
+
+
+def calculate_input_hash(hor_table_path, fasta_path, repeats_table_path):
+    """
+    Calculate a hash of the input files to use for caching.
+    Returns a hex string hash.
+    """
+    hasher = hashlib.sha256()
+
+    # Hash each input file
+    for filepath in [hor_table_path, fasta_path, repeats_table_path]:
+        with open(filepath, 'rb') as f:
+            # Read in chunks to handle large files
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+
+    return hasher.hexdigest()
+
+
+def get_cache_path(input_hash, output_dir):
+    """
+    Get the cache file path for a given input hash.
+    Cache is stored in the output directory.
+    """
+    cache_dir = os.path.join(output_dir, '.cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, f'hor_table_{input_hash}.csv')
+
+
+def load_cache(cache_path):
+    """
+    Load cached HOR table from CSV file.
+    Returns the DataFrame or None if cache doesn't exist.
+    """
+    if os.path.exists(cache_path):
+        try:
+            # Read the CSV, handling list columns
+            df = pd.read_csv(cache_path)
+
+            # Convert string representations of lists back to actual lists
+            # These columns contain lists that need to be parsed
+            list_columns = ['block_A_sequence', 'block_B_sequence', 'block_A_positions', 'block_B_positions']
+            for col in list_columns:
+                if col in df.columns:
+                    df[col] = df[col].apply(eval)
+
+            return df
+        except Exception as e:
+            print(f"Warning: Failed to load cache: {e}")
+            return None
+    return None
+
+
+def save_cache(hor_table, cache_path):
+    """
+    Save HOR table to cache as CSV file.
+    """
+    try:
+        hor_table.to_csv(cache_path, index=False)
+
+        # Report cache size
+        size_mb = os.path.getsize(cache_path) / (1024 * 1024)
+        print(f"Cache saved: {size_mb:.2f} MB at {cache_path}")
+    except Exception as e:
+        print(f"Warning: Failed to save cache: {e}")
