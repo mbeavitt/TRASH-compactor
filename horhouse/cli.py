@@ -9,9 +9,16 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
-from sklearn.manifold import MDS
 from sklearn.preprocessing import MinMaxScaler
 import Levenshtein
+
+try:
+    from umap import UMAP
+    HAS_UMAP = True
+except ImportError:
+    from sklearn.manifold import MDS
+    HAS_UMAP = False
+    print("Warning: UMAP not installed, falling back to MDS. Install with: pip install umap-learn")
 
 from . import utils, repeats
 
@@ -345,10 +352,47 @@ class HORhouse:
                 global_distance_matrix[i, j] = dist
                 global_distance_matrix[j, i] = dist
 
-        # Project to 3D RGB space using MDS
-        print(f"  Projecting to 3D color space...")
-        mds = MDS(n_components=3, metric='precomputed', n_init=1, init='random', random_state=42)
-        rgb_coords = mds.fit_transform(global_distance_matrix)
+        # Project to 3D RGB space using UMAP (or MDS if UMAP not available)
+        if HAS_UMAP:
+            print(f"  Projecting to 3D color space using UMAP...")
+            # UMAP is much faster than MDS and often gives better embeddings
+            reducer = UMAP(
+                n_components=3,
+                metric='precomputed',
+                n_neighbors=min(15, n_global - 1),
+                min_dist=0.1,
+                random_state=42
+            )
+            rgb_coords = reducer.fit_transform(global_distance_matrix)
+
+            # Also create 2D projection for visualization
+            print(f"  Creating 2D UMAP visualization...")
+            reducer_2d = UMAP(
+                n_components=2,
+                metric='precomputed',
+                n_neighbors=min(15, n_global - 1),
+                min_dist=0.1,
+                random_state=42
+            )
+            coords_2d = reducer_2d.fit_transform(global_distance_matrix)
+
+            # Save 2D UMAP plot
+            fig, ax = plt.subplots(figsize=(12, 10))
+            scatter = ax.scatter(coords_2d[:, 0], coords_2d[:, 1], c=range(n_global),
+                               cmap='tab20', alpha=0.6, s=50)
+            ax.set_xlabel('UMAP 1')
+            ax.set_ylabel('UMAP 2')
+            ax.set_title(f'2D UMAP of {n_global} Unique Repeat Sequences')
+            plt.colorbar(scatter, ax=ax, label='Sequence Index')
+
+            umap_plot_path = self.output_dir / 'umap_2d_sequences.png'
+            plt.savefig(umap_plot_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            print(f"  Saved 2D UMAP plot to {umap_plot_path}")
+        else:
+            print(f"  Projecting to 3D color space using MDS (slower)...")
+            mds = MDS(n_components=3, metric='precomputed', n_init=1, init='random', random_state=42)
+            rgb_coords = mds.fit_transform(global_distance_matrix)
 
         # Normalize to [0, 1]
         scaler = MinMaxScaler()
