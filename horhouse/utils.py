@@ -196,15 +196,32 @@ def calculate_input_hash(hor_table_path, fasta_path, repeats_table_path):
     return hasher.hexdigest()
 
 
-def get_cache_path(input_hash, cache_dir=None):
+def get_cache_path(input_hash, cache_dir=None, fasta_path=None):
     """
     Get the cache file path for a given input hash.
     Cache is stored in current working directory by default.
+    Uses FASTA filename + short hash for readability.
     """
     if cache_dir is None:
         cache_dir = os.path.join(os.getcwd(), '.horhouse_cache')
     os.makedirs(cache_dir, exist_ok=True)
-    return os.path.join(cache_dir, f'hor_table_{input_hash}.csv')
+
+    # Create human-readable cache name from FASTA file
+    if fasta_path:
+        # Extract basename without .fa/.fasta extension
+        fasta_basename = os.path.basename(fasta_path)
+        # Remove .fa or .fasta extension
+        if fasta_basename.endswith('.fasta'):
+            fasta_basename = fasta_basename[:-6]
+        elif fasta_basename.endswith('.fa'):
+            fasta_basename = fasta_basename[:-3]
+        # Use first 8 chars of hash for verification
+        cache_name = f'{fasta_basename}_{input_hash[:8]}.csv'
+    else:
+        # Fallback to full hash
+        cache_name = f'hor_table_{input_hash}.csv'
+
+    return os.path.join(cache_dir, cache_name)
 
 
 def load_cache(cache_path):

@@ -54,21 +54,21 @@ class HORhouse:
             input_hash = utils.calculate_input_hash(hor_table_path, fasta_path, repeats_table_path)
             t1 = time.time()
             print(f"  Hash calculated in {t1-t0:.2f}s: {input_hash[:16]}...")
-            cache_path = utils.get_cache_path(input_hash)
+            cache_path = utils.get_cache_path(input_hash, fasta_path=fasta_path)
             print(f"  Cache location: {cache_path}")
 
         # Try to load from cache
-        print("  Checking if cache exists...")
+        print("  Loading cache (if exists)...")
         t0 = time.time()
         cached_table = utils.load_cache(cache_path)
         t1 = time.time()
         use_cache = cached_table is not None
 
         if use_cache:
-            print(f"Cache found! Loaded in {t1-t0:.2f}s")
+            print(f"  Cache loaded successfully in {t1-t0:.2f}s")
             self.hor_table = cached_table
         else:
-            print("No cache found, will calculate from scratch...")
+            print("  No cache found, will calculate from scratch...")
 
         print("\nLoading data...")
 
