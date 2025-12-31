@@ -285,29 +285,37 @@ class HORhouse:
 
             # Internal diversity for block A
             if len(block_A) > 1:
-                distances_A = []
+                # Pre-allocate numpy array for performance (avoids 496M list.append calls)
+                n_pairs_A = len(block_A) * (len(block_A) - 1) // 2
+                distances_A = np.empty(n_pairs_A, dtype=np.float32)
+                idx = 0
                 for i in range(len(block_A)):
                     for j in range(i+1, len(block_A)):
                         # Use cached distance, or 0 if same sequence
                         if block_A[i] == block_A[j]:
-                            distances_A.append(0)
+                            distances_A[idx] = 0
                         else:
-                            distances_A.append(distance_cache.get((block_A[i], block_A[j]), 0))
-                diversity_A = sum(distances_A) / len(distances_A) if distances_A else 0
+                            distances_A[idx] = distance_cache.get((block_A[i], block_A[j]), 0)
+                        idx += 1
+                diversity_A = distances_A.mean()
             else:
                 diversity_A = 0
 
             # Internal diversity for block B
             if len(block_B) > 1:
-                distances_B = []
+                # Pre-allocate numpy array for performance
+                n_pairs_B = len(block_B) * (len(block_B) - 1) // 2
+                distances_B = np.empty(n_pairs_B, dtype=np.float32)
+                idx = 0
                 for i in range(len(block_B)):
                     for j in range(i+1, len(block_B)):
                         # Use cached distance, or 0 if same sequence
                         if block_B[i] == block_B[j]:
-                            distances_B.append(0)
+                            distances_B[idx] = 0
                         else:
-                            distances_B.append(distance_cache.get((block_B[i], block_B[j]), 0))
-                diversity_B = sum(distances_B) / len(distances_B) if distances_B else 0
+                            distances_B[idx] = distance_cache.get((block_B[i], block_B[j]), 0)
+                        idx += 1
+                diversity_B = distances_B.mean()
             else:
                 diversity_B = 0
 
