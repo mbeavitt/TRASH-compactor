@@ -381,32 +381,24 @@ class HORhouse:
             )
             rgb_coords = reducer.fit_transform(global_distance_matrix)
 
-            # Also create 2D projection for visualization
-            print(f"  Creating 2D UMAP visualization...")
-            reducer_2d = UMAP(
-                n_components=2,
-                metric='precomputed',
-                n_neighbors=min(15, n_global - 1),
-                min_dist=0.1,
-                n_jobs=1,
-                init='random',
-                random_state=42
-            )
-            coords_2d = reducer_2d.fit_transform(global_distance_matrix)
+            # Create 3D visualization using the same RGB coordinates
+            print(f"  Creating 3D UMAP visualization...")
+            from mpl_toolkits.mplot3d import Axes3D
 
-            # Save 2D UMAP plot
-            fig, ax = plt.subplots(figsize=(12, 10))
-            scatter = ax.scatter(coords_2d[:, 0], coords_2d[:, 1], c=range(n_global),
-                               cmap='tab20', alpha=0.6, s=50)
+            fig = plt.figure(figsize=(14, 12))
+            ax = fig.add_subplot(111, projection='3d')
+            scatter = ax.scatter(rgb_coords[:, 0], rgb_coords[:, 1], rgb_coords[:, 2],
+                               c=range(n_global), cmap='tab20', alpha=0.6, s=50)
             ax.set_xlabel('UMAP 1')
             ax.set_ylabel('UMAP 2')
-            ax.set_title(f'2D UMAP of {n_global} Unique Repeat Sequences')
-            plt.colorbar(scatter, ax=ax, label='Sequence Index')
+            ax.set_zlabel('UMAP 3')
+            ax.set_title(f'3D UMAP of {n_global} Unique Repeat Sequences')
+            plt.colorbar(scatter, ax=ax, label='Sequence Index', shrink=0.5)
 
-            umap_plot_path = self.output_dir / 'umap_2d_sequences.png'
+            umap_plot_path = self.output_dir / 'umap_3d_sequences.png'
             plt.savefig(umap_plot_path, dpi=150, bbox_inches='tight')
             plt.close()
-            print(f"  Saved 2D UMAP plot to {umap_plot_path}")
+            print(f"  Saved 3D UMAP plot to {umap_plot_path}")
         else:
             if self.color_method == 'umap' and not HAS_UMAP:
                 print(f"  UMAP not available, falling back to MDS. Install with: pip install umap-learn")
