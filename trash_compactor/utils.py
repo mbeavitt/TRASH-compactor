@@ -203,7 +203,7 @@ def get_cache_path(input_hash, cache_dir=None, fasta_path=None):
     Uses FASTA filename + short hash for readability.
     """
     if cache_dir is None:
-        cache_dir = os.path.join(os.getcwd(), '.horhouse_cache')
+        cache_dir = os.path.join(os.getcwd(), '.trash_compactor_cache')
     os.makedirs(cache_dir, exist_ok=True)
 
     # Create human-readable cache name from FASTA file

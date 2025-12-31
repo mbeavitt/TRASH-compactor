@@ -3,9 +3,9 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "horhouse"
+name = "trash-compactor"
 version = "0.1.0"
-description = "Interactive tool for analyzing Higher Order Repeats"
+description = "Interactive tool for analyzing Higher Order Repeats from TRASH output"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [
@@ -20,8 +20,8 @@ dependencies = [
 ]
 
 [project.scripts]
-horhouse = "horhouse.cli:main"
+trash-compactor = "trash_compactor.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["horhouse*"]
+include = ["trash_compactor*"]

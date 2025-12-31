@@ -11,8 +11,9 @@ dist/
 *.egg-info/
 *.egg
 
-# HORhouse output
-horhouse_output/
+# TRASH-compactor output
+trash_compactor_output/
+.trash_compactor_cache/
 
 # OS files
 .DS_Store

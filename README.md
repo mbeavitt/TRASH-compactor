@@ -1,4 +1,4 @@
-# HORhouse
+# TRASH-compactor
 
 Interactive analysis and visualization tool for Higher Order Repeats (HORs) in genomic sequences.
 
@@ -12,13 +12,13 @@ pip install .
 
 ## Usage
 
-HORhouse uses TRASH output files as input:
+TRASH-compactor uses TRASH output files as input:
 
 ```bash
-horhouse --input HORs_sample.fa_Chr1_CEN178.csv \
-         --fasta sample.fa \
-         --repeats all.repeats.from.sample.CEN178.csv \
-         --chromosome Chr1
+trash-compactor --input HORs_sample.fa_Chr1_CEN178.csv \
+                --fasta sample.fa \
+                --repeats all.repeats.from.sample.CEN178.csv \
+                --chromosome Chr1
 ```
 
 ### Required Arguments
@@ -44,15 +44,15 @@ The cache itself is the table of HORs with interesting metrics added and is usef
 
 ## Cache Management
 
-Caches are stored in `.horhouse_cache/` in the current directory with filenames based on the FASTA file:
+Caches are stored in `.trash_compactor_cache/` in the current directory with filenames based on the FASTA file:
 
 ```
-.horhouse_cache/ANGE-B-10.ragtag_scaffolds_f0f44ad5.csv
+.trash_compactor_cache/ANGE-B-10.ragtag_scaffolds_f0f44ad5.csv
 ```
 
 Load a specific cache:
 ```bash
-horhouse --input ... --fasta ... --repeats ... --cache-file path/to/cache.csv
+trash-compactor --input ... --fasta ... --repeats ... --cache-file path/to/cache.csv
 ```
 
 ## Performance

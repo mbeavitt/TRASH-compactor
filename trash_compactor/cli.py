@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HORhouse - Interactive CLI for HOR analysis"""
+"""TRASH-compactor - Interactive CLI for HOR analysis"""
 
 import os
 import sys
@@ -25,10 +25,10 @@ from . import utils, repeats
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-class HORhouse:
+class TRASHCompactor:
     """Interactive HOR analysis tool"""
 
-    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output", cache_only=False, cache_file=None, color_method='umap'):
+    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="trash_compactor_output", cache_only=False, cache_file=None, color_method='umap'):
         self.hor_table_path = hor_table_path
         self.fasta_path = fasta_path
         self.repeats_table_path = repeats_table_path
@@ -37,7 +37,7 @@ class HORhouse:
         self.cache_only = cache_only
         self.color_method = color_method.lower()
 
-        print("Welcome to HORhouse")
+        print("Welcome to TRASH-compactor")
         print(f"Output directory: {self.output_dir}")
 
         # Determine cache path
@@ -737,14 +737,14 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        prog='horhouse',
-        description='HORhouse - Interactive HOR analysis tool')
+        prog='trash-compactor',
+        description='TRASH-compactor - Interactive HOR analysis tool for TRASH output')
 
     parser.add_argument('--input', required=True, help='HOR table CSV file')
     parser.add_argument('--fasta', required=True, help='FASTA file')
     parser.add_argument('--repeats', required=True, help='Repeats table CSV file (e.g., test_data.csv or all.repeats.csv)')
     parser.add_argument('--chromosome', help='Chromosome name (required for multi-sequence FASTA, optional for single-sequence)')
-    parser.add_argument('--output', default='horhouse_output', help='Output directory (default: horhouse_output)')
+    parser.add_argument('--output', default='trash_compactor_output', help='Output directory (default: trash_compactor_output)')
     parser.add_argument('--cache-only', action='store_true', help='Only calculate and cache results, do not enter interactive mode')
     parser.add_argument('--cache-file', help='Specific cache file to load (overrides automatic cache detection)')
     parser.add_argument('--color-method', choices=['umap', 'mds'], default='umap',
@@ -752,8 +752,8 @@ def main():
 
     args = parser.parse_args()
 
-    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output,
-                   cache_only=args.cache_only, cache_file=args.cache_file, color_method=args.color_method)
+    app = TRASHCompactor(args.input, args.fasta, args.repeats, args.chromosome, args.output,
+                         cache_only=args.cache_only, cache_file=args.cache_file, color_method=args.color_method)
 
     if not args.cache_only:
         app.run()
