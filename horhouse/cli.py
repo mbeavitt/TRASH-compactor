@@ -262,7 +262,17 @@ class HORhouse:
                 distance_cache[(seq_i, seq_j)] = dist
                 distance_cache[(seq_j, seq_i)] = dist
 
-        print("  Calculating inter-block similarity (using cached distances)...")
+        # PHASE 2 OPTIMIZATION: Convert distance_cache to NumPy array for faster lookups
+        print("    Converting distance cache to NumPy matrix for faster access...")
+        seq_to_id = {seq: i for i, seq in enumerate(unique_sequences)}
+        distance_matrix = np.zeros((n_unique, n_unique), dtype=np.float32)
+
+        # Populate distance matrix from cache
+        for (seq_i, seq_j), dist in distance_cache.items():
+            i, j = seq_to_id[seq_i], seq_to_id[seq_j]
+            distance_matrix[i, j] = dist
+
+        print("  Calculating inter-block similarity (using matrix lookups)...")
         # Inter-block similarity
         def calc_similarity(row):
             block_A = row['block_A_sequence']
@@ -270,13 +280,18 @@ class HORhouse:
             if len(block_A) == 0 or len(block_B) == 0:
                 return 0
             min_len = min(len(block_A), len(block_B))
-            distances = [distance_cache.get((block_A[i], block_B[i]), 0) for i in range(min_len)]
-            return sum(distances) / len(distances) if distances else 0
+            # Use pre-allocated array and matrix indexing for performance
+            distances = np.empty(min_len, dtype=np.float32)
+            for i in range(min_len):
+                seq_a_id = seq_to_id[block_A[i]]
+                seq_b_id = seq_to_id[block_B[i]]
+                distances[i] = distance_matrix[seq_a_id, seq_b_id]
+            return distances.mean() if min_len > 0 else 0
 
         self.hor_table['position_wise_distance'] = self.hor_table.apply(calc_similarity, axis=1)
         self.hor_table['hor_similarity'] = 1 / (1 + self.hor_table['position_wise_distance'])
 
-        print("  Calculating internal diversity (using cached distances)...")
+        print("  Calculating internal diversity (using matrix lookups)...")
         # Calculate internal diversity within each block
         def calc_internal_diversity(row):
             """Average pairwise distance within a block"""
@@ -290,12 +305,11 @@ class HORhouse:
                 distances_A = np.empty(n_pairs_A, dtype=np.float32)
                 idx = 0
                 for i in range(len(block_A)):
+                    seq_i_id = seq_to_id[block_A[i]]
                     for j in range(i+1, len(block_A)):
-                        # Use cached distance, or 0 if same sequence
-                        if block_A[i] == block_A[j]:
-                            distances_A[idx] = 0
-                        else:
-                            distances_A[idx] = distance_cache.get((block_A[i], block_A[j]), 0)
+                        seq_j_id = seq_to_id[block_A[j]]
+                        # Use matrix indexing (407M dict.get calls eliminated)
+                        distances_A[idx] = distance_matrix[seq_i_id, seq_j_id]
                         idx += 1
                 diversity_A = distances_A.mean()
             else:
@@ -308,12 +322,11 @@ class HORhouse:
                 distances_B = np.empty(n_pairs_B, dtype=np.float32)
                 idx = 0
                 for i in range(len(block_B)):
+                    seq_i_id = seq_to_id[block_B[i]]
                     for j in range(i+1, len(block_B)):
-                        # Use cached distance, or 0 if same sequence
-                        if block_B[i] == block_B[j]:
-                            distances_B[idx] = 0
-                        else:
-                            distances_B[idx] = distance_cache.get((block_B[i], block_B[j]), 0)
+                        seq_j_id = seq_to_id[block_B[j]]
+                        # Use matrix indexing (407M dict.get calls eliminated)
+                        distances_B[idx] = distance_matrix[seq_i_id, seq_j_id]
                         idx += 1
                 diversity_B = distances_B.mean()
             else:
