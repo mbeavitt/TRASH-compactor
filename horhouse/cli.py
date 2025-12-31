@@ -18,14 +18,13 @@ from . import utils, repeats
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
 
-REPEAT_SIZE = 178
-
 class HORhouse:
     """Interactive HOR analysis tool"""
 
-    def __init__(self, hor_table_path, fasta_path, output_dir="horhouse_output"):
+    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="horhouse_output"):
         self.hor_table_path = hor_table_path
         self.fasta_path = fasta_path
+        self.repeats_table_path = repeats_table_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
 
@@ -34,8 +33,45 @@ class HORhouse:
         print("\nLoading data...")
 
         self.hor_table = utils.import_hor_table(hor_table_path)
+        self.repeats_table = utils.import_repeats_table(repeats_table_path)
         self.fasta = utils.read_fasta(fasta_path)
-        self.seq = self.fasta[0]['sequence']
+
+        # Handle multi-sequence FASTA
+        if len(self.fasta) == 1:
+            # Single sequence - use it directly
+            self.seq = self.fasta[0]['sequence']
+            self.seq_name = self.fasta[0]['header']
+            print(f"Using single sequence: {self.seq_name}")
+        else:
+            # Multi-sequence FASTA
+            if chromosome is None:
+                # Try to extract chromosome from HOR table
+                if 'chrA' in self.hor_table.columns and len(self.hor_table) > 0:
+                    chr_full_name = self.hor_table['chrA'].iloc[0]
+                    # Extract Chr1, Chr2, etc. from "ANGE-B-10.ragtag_scaffolds.fa_Chr1"
+                    if '_Chr' in chr_full_name:
+                        chromosome = chr_full_name.split('_Chr')[-1].split('_')[0]
+                        chromosome = 'Chr' + chromosome
+                        print(f"Auto-detected chromosome from HOR table: {chromosome}")
+
+            if chromosome is None:
+                raise ValueError("Multi-sequence FASTA requires --chromosome parameter")
+
+            self.seq_name = chromosome
+            self.seq = utils.select_sequence_by_name(self.fasta, chromosome)
+            if self.seq is None:
+                available = [f['header'] for f in self.fasta]
+                raise ValueError(f"Chromosome '{chromosome}' not found in FASTA. Available: {available}")
+            print(f"Selected chromosome: {self.seq_name}")
+
+        # Pre-filter repeats table to only the chromosome we're analyzing (performance optimization)
+        original_count = len(self.repeats_table)
+        self.repeats_table = self.repeats_table[
+            self.repeats_table['seq_name'] == self.seq_name
+        ].copy()
+        print(f"Loaded {len(self.repeats_table)} repeats from repeats table")
+        if original_count > len(self.repeats_table):
+            print(f"  (Filtered to {self.seq_name} from {original_count} total repeats)")
 
         print("Calculating metrics...")
         self._calculate_metrics()
@@ -48,16 +84,67 @@ class HORhouse:
     def _calculate_metrics(self):
         """Calculate all HOR quality metrics"""
 
-        # Extract block sequences
-        self.hor_table['block_A_sequence'] = [
-            utils.chunk_string(self.seq[sa:ea], REPEAT_SIZE)
-            for sa, ea in zip(self.hor_table['block_A_start'], self.hor_table['block_A_end'])
-        ]
+        # Extract block sequences and positions from repeats table
+        block_A_sequences = []
+        block_B_sequences = []
+        block_A_positions = []
+        block_B_positions = []
 
-        self.hor_table['block_B_sequence'] = [
-            utils.chunk_string(self.seq[sb:eb], REPEAT_SIZE)
-            for sb, eb in zip(self.hor_table['block_B_start'], self.hor_table['block_B_end'])
-        ]
+        total_hors = len(self.hor_table)
+        progress_interval = max(1000, total_hors // 100)  # Print every 1000 HORs or 1%, whichever is larger
+
+        for hor_num, (idx, row) in enumerate(self.hor_table.iterrows(), 1):
+            # Get repeats for block A with positions
+            repeats_A, pos_A = utils.get_repeats_in_range(
+                self.repeats_table,
+                self.seq_name,
+                row['block_A_start'],
+                row['block_A_end'],
+                return_positions=True
+            )
+
+            # Get repeats for block B with positions
+            repeats_B, pos_B = utils.get_repeats_in_range(
+                self.repeats_table,
+                self.seq_name,
+                row['block_B_start'],
+                row['block_B_end'],
+                return_positions=True
+            )
+
+            block_A_sequences.append(repeats_A)
+            block_B_sequences.append(repeats_B)
+            block_A_positions.append(pos_A)
+            block_B_positions.append(pos_B)
+
+            # Print progress
+            if hor_num % progress_interval == 0 or hor_num == total_hors:
+                percent = (hor_num / total_hors) * 100
+                print(f"  Processed {hor_num:,}/{total_hors:,} HORs ({percent:.1f}%)")
+
+        self.hor_table['block_A_sequence'] = block_A_sequences
+        self.hor_table['block_B_sequence'] = block_B_sequences
+        self.hor_table['block_A_positions'] = block_A_positions
+        self.hor_table['block_B_positions'] = block_B_positions
+
+        # Add columns for actual repeat counts found
+        self.hor_table['actual_repeats_A'] = self.hor_table['block_A_sequence'].apply(len)
+        self.hor_table['actual_repeats_B'] = self.hor_table['block_B_sequence'].apply(len)
+
+        # Flag HORs with repeat count mismatches
+        self.hor_table['repeat_mismatch_A'] = (
+            self.hor_table['actual_repeats_A'] != self.hor_table['block.size.in.units']
+        )
+        self.hor_table['repeat_mismatch_B'] = (
+            self.hor_table['actual_repeats_B'] != self.hor_table['block.size.in.units']
+        )
+
+        # Summary of mismatches
+        mismatch_A_count = self.hor_table['repeat_mismatch_A'].sum()
+        mismatch_B_count = self.hor_table['repeat_mismatch_B'].sum()
+        if mismatch_A_count > 0 or mismatch_B_count > 0:
+            print(f"Note: {mismatch_A_count} HORs have block A repeat count mismatch, {mismatch_B_count} have block B mismatch")
+            print(f"      (actual vs expected from HOR table - see 'repeat_mismatch_A/B' columns)")
 
         # Calculate unique monomers
         self.hor_table['unique_monomers_A'] = self.hor_table['block_A_sequence'].apply(lambda x: len(set(x)))
@@ -191,26 +278,68 @@ class HORhouse:
 
         row = self.hor_table.iloc[hor_idx]
 
-        # Get block sequences
+        # Get block sequences and positions
         block_A_repeats = row['block_A_sequence']
         block_B_repeats = row['block_B_sequence']
+        block_A_pos = row['block_A_positions']
+        block_B_pos = row['block_B_positions']
+
+        # Get expected count and block boundaries
+        expected_count = int(row['block.size.in.units'])
+        block_A_start = row['block_A_start']
+        block_A_end = row['block_A_end']
+        block_B_start = row['block_B_start']
+        block_B_end = row['block_B_end']
 
         # Get consensus and distances for this HOR (for legend only)
         all_repeats = block_A_repeats + block_B_repeats
         unique_repeats = sorted(list(set(all_repeats)))
-        cons = repeats.get_consensus(unique_repeats)
-        dist_list = repeats.hamming_list(unique_repeats, cons)
-        unique_repeats_dist_map = {rep: dist for rep, dist in zip(unique_repeats, dist_list)}
+        if len(unique_repeats) > 0:
+            cons = repeats.get_consensus(unique_repeats)
+            dist_list = repeats.hamming_list(unique_repeats, cons)
+            unique_repeats_dist_map = {rep: dist for rep, dist in zip(unique_repeats, dist_list)}
+        else:
+            unique_repeats_dist_map = {}
 
-        # Create RGB arrays using global colors
-        rgb_array_A = np.ones((1, len(block_A_repeats), 3))
-        rgb_array_B = np.ones((1, len(block_B_repeats), 3))
+        # Build RGB arrays with actual repeat positions and sizes
+        # Use block size in bp as the width (more granular than just repeat count)
+        block_A_size_bp = block_A_end - block_A_start
+        block_B_size_bp = block_B_end - block_B_start
 
-        for idx, seq in enumerate(block_A_repeats):
-            rgb_array_A[0, idx] = self.global_color_map[seq]
+        # Create pixel arrays (1 pixel per bp for precision)
+        MISSING_COLOR = [0.8, 0.8, 0.8]  # Light gray for missing repeats
+        rgb_array_A = np.ones((1, block_A_size_bp, 3)) * MISSING_COLOR
+        rgb_array_B = np.ones((1, block_B_size_bp, 3)) * MISSING_COLOR
 
-        for idx, seq in enumerate(block_B_repeats):
-            rgb_array_B[0, idx] = self.global_color_map[seq]
+        # Fill in block A repeats at their actual positions with actual sizes
+        for seq, pos in zip(block_A_repeats, block_A_pos):
+            # Calculate pixel range for this repeat
+            start_px = max(0, pos - block_A_start)
+            # Get repeat size from repeats table
+            repeat_mask = (
+                (self.repeats_table['seq_name'] == self.seq_name) &
+                (self.repeats_table['start'] == pos)
+            )
+            if repeat_mask.sum() > 0:
+                repeat_size = self.repeats_table[repeat_mask].iloc[0]['width']
+                end_px = min(block_A_size_bp, start_px + repeat_size)
+
+                if seq in self.global_color_map:
+                    rgb_array_A[0, start_px:end_px] = self.global_color_map[seq]
+
+        # Fill in block B repeats at their actual positions with actual sizes
+        for seq, pos in zip(block_B_repeats, block_B_pos):
+            start_px = max(0, pos - block_B_start)
+            repeat_mask = (
+                (self.repeats_table['seq_name'] == self.seq_name) &
+                (self.repeats_table['start'] == pos)
+            )
+            if repeat_mask.sum() > 0:
+                repeat_size = self.repeats_table[repeat_mask].iloc[0]['width']
+                end_px = min(block_B_size_bp, start_px + repeat_size)
+
+                if seq in self.global_color_map:
+                    rgb_array_B[0, start_px:end_px] = self.global_color_map[seq]
 
         # Create figure with 4 subplots (Block A + bp, Block B + bp)
         fig = plt.figure(figsize=(20, 6))
@@ -236,18 +365,19 @@ class HORhouse:
 
         # Block A bp annotations
         ax2 = fig.add_subplot(gs[1])
-        ax2.set_xlim(0, len(block_A_repeats))
+        ax2.set_xlim(0, block_A_size_bp)
         ax2.set_ylim(0, 1)
         ax2.axis('off')
 
         start_A = int(row['block_A_start'])
-        n_markers_A = min(10, len(block_A_repeats))
+
+        n_markers_A = min(10, expected_count + 1)
         for i in range(n_markers_A):
-            idx = int(i * len(block_A_repeats) / n_markers_A)
-            bp_pos = start_A + idx * REPEAT_SIZE
-            ax2.text(idx, 0.5, f'{bp_pos:,}', rotation=45, ha='right', va='bottom', fontsize=8)
-            ax2.axvline(idx, ymin=0.3, ymax=0.5, color='black', alpha=0.3, linewidth=0.5)
-        ax2.set_xlabel('Repeat index', fontsize=9)
+            px = int(i * block_A_size_bp / (n_markers_A - 1)) if n_markers_A > 1 else 0
+            bp_pos = start_A + px
+            ax2.text(px, 0.5, f'{bp_pos:,}', rotation=45, ha='right', va='bottom', fontsize=8)
+            ax2.axvline(px, ymin=0.3, ymax=0.5, color='black', alpha=0.3, linewidth=0.5)
+        ax2.set_xlabel('Position (bp)', fontsize=9)
 
         # Block B plot
         ax3 = fig.add_subplot(gs[2])
@@ -258,18 +388,19 @@ class HORhouse:
 
         # Block B bp annotations
         ax4 = fig.add_subplot(gs[3])
-        ax4.set_xlim(0, len(block_B_repeats))
+        ax4.set_xlim(0, block_B_size_bp)
         ax4.set_ylim(0, 1)
         ax4.axis('off')
 
         start_B = int(row['block_B_start'])
-        n_markers_B = min(10, len(block_B_repeats))
+
+        n_markers_B = min(10, expected_count + 1)
         for i in range(n_markers_B):
-            idx = int(i * len(block_B_repeats) / n_markers_B)
-            bp_pos = start_B + idx * REPEAT_SIZE
-            ax4.text(idx, 0.5, f'{bp_pos:,}', rotation=45, ha='right', va='bottom', fontsize=8)
-            ax4.axvline(idx, ymin=0.3, ymax=0.5, color='black', alpha=0.3, linewidth=0.5)
-        ax4.set_xlabel('Repeat index', fontsize=9)
+            px = int(i * block_B_size_bp / (n_markers_B - 1)) if n_markers_B > 1 else 0
+            bp_pos = start_B + px
+            ax4.text(px, 0.5, f'{bp_pos:,}', rotation=45, ha='right', va='bottom', fontsize=8)
+            ax4.axvline(px, ymin=0.3, ymax=0.5, color='black', alpha=0.3, linewidth=0.5)
+        ax4.set_xlabel('Position (bp)', fontsize=9)
 
         plt.tight_layout()
 
@@ -438,11 +569,13 @@ def main():
 
     parser.add_argument('--input', required=True, help='HOR table CSV file')
     parser.add_argument('--fasta', required=True, help='FASTA file')
+    parser.add_argument('--repeats', required=True, help='Repeats table CSV file (e.g., test_data.csv or all.repeats.csv)')
+    parser.add_argument('--chromosome', help='Chromosome name (required for multi-sequence FASTA, optional for single-sequence)')
     parser.add_argument('--output', default='horhouse_output', help='Output directory (default: horhouse_output)')
 
     args = parser.parse_args()
 
-    app = HORhouse(args.input, args.fasta, args.output)
+    app = HORhouse(args.input, args.fasta, args.repeats, args.chromosome, args.output)
     app.run()
 
 
