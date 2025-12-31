@@ -184,10 +184,12 @@ class HORhouse:
             print(f"Note: {mismatch_A_count} HORs have block A repeat count mismatch, {mismatch_B_count} have block B mismatch")
             print(f"      (actual vs expected from HOR table - see 'repeat_mismatch_A/B' columns)")
 
+        print("  Calculating unique monomers...")
         # Calculate unique monomers
         self.hor_table['unique_monomers_A'] = self.hor_table['block_A_sequence'].apply(lambda x: len(set(x)))
         self.hor_table['unique_monomers_B'] = self.hor_table['block_B_sequence'].apply(lambda x: len(set(x)))
 
+        print("  Calculating block quality metrics...")
         # Block quality
         self.hor_table['block_A_quality'] = self.hor_table.apply(
             lambda row: row['block.size.in.units'] / row['unique_monomers_A'] if row['unique_monomers_A'] > 0 else 0,
@@ -199,6 +201,7 @@ class HORhouse:
         )
         self.hor_table['avg_block_quality'] = (self.hor_table['block_A_quality'] + self.hor_table['block_B_quality']) / 2
 
+        print("  Calculating block overlaps and gaps...")
         # Block overlap
         def calc_overlap(row):
             overlap_start = max(row['start_A_units'], row['start_B_units'])
@@ -216,6 +219,8 @@ class HORhouse:
 
         self.hor_table['block_gap_units'] = self.hor_table.apply(calc_gap, axis=1)
 
+        print("  Calculating inter-block similarity (Levenshtein distances)...")
+        print("    (This may take a while for large datasets...)")
         # Inter-block similarity
         def calc_similarity(row):
             block_A = row['block_A_sequence']
@@ -229,6 +234,8 @@ class HORhouse:
         self.hor_table['position_wise_distance'] = self.hor_table.apply(calc_similarity, axis=1)
         self.hor_table['hor_similarity'] = 1 / (1 + self.hor_table['position_wise_distance'])
 
+        print("  Calculating internal diversity (pairwise Levenshtein distances)...")
+        print("    (This is the slowest step and may take a long time...)")
         # Calculate internal diversity within each block
         def calc_internal_diversity(row):
             """Average pairwise distance within a block"""
@@ -260,6 +267,7 @@ class HORhouse:
 
         self.hor_table['internal_diversity'] = self.hor_table.apply(calc_internal_diversity, axis=1)
 
+        print("  Calculating diversity-similarity scores...")
         # Diversity-similarity score: high internal diversity + high inter-block similarity + large size
         # High score = large HORs with complex internal structure but blocks match each other well
         self.hor_table['diversity_similarity_score'] = (
