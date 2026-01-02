@@ -28,7 +28,7 @@ pd.set_option('display.width', 1000)
 class TRASHCompactor:
     """Interactive HOR analysis tool"""
 
-    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="trash_compactor_output", cache_only=False, cache_file=None, color_method='umap'):
+    def __init__(self, hor_table_path, fasta_path, repeats_table_path, chromosome=None, output_dir="trash_compactor_output", cache_only=False, cache_dir=None, color_method='umap'):
         self.hor_table_path = hor_table_path
         self.fasta_path = fasta_path
         self.repeats_table_path = repeats_table_path
@@ -42,20 +42,15 @@ class TRASHCompactor:
 
         # Determine cache path
         print("\nChecking cache...")
-        if cache_file:
-            # Use specific cache file provided
-            cache_path = cache_file
-            print(f"Using specified cache file: {cache_path}")
-        else:
-            # Calculate cache hash based on input files
-            import time
-            t0 = time.time()
-            print("  Calculating input hash...")
-            input_hash = utils.calculate_input_hash(hor_table_path, fasta_path, repeats_table_path)
-            t1 = time.time()
-            print(f"  Hash calculated in {t1-t0:.2f}s: {input_hash[:16]}...")
-            cache_path = utils.get_cache_path(input_hash, fasta_path=fasta_path)
-            print(f"  Cache location: {cache_path}")
+        # Calculate cache hash based on input files
+        import time
+        t0 = time.time()
+        print("  Calculating input hash...")
+        input_hash = utils.calculate_input_hash(hor_table_path, fasta_path, repeats_table_path)
+        t1 = time.time()
+        print(f"  Hash calculated in {t1-t0:.2f}s: {input_hash[:16]}...")
+        cache_path = utils.get_cache_path(input_hash, cache_dir=cache_dir, fasta_path=fasta_path)
+        print(f"  Cache location: {cache_path}")
 
         # Try to load from cache
         print("  Loading cache (if exists)...")
@@ -778,14 +773,14 @@ def main():
     parser.add_argument('--chromosome', help='Chromosome name (required for multi-sequence FASTA, optional for single-sequence)')
     parser.add_argument('--output', default='trash_compactor_output', help='Output directory (default: trash_compactor_output)')
     parser.add_argument('--cache-only', action='store_true', help='Only calculate and cache results, do not enter interactive mode')
-    parser.add_argument('--cache-file', help='Specific cache file to load (overrides automatic cache detection)')
+    parser.add_argument('--cache-dir', help='Directory for cache files (default: .trash_compactor_cache in current directory)')
     parser.add_argument('--color-method', choices=['umap', 'mds'], default='umap',
                        help='Method for projecting sequences to RGB color space (default: umap)')
 
     args = parser.parse_args()
 
     app = TRASHCompactor(args.input, args.fasta, args.repeats, args.chromosome, args.output,
-                         cache_only=args.cache_only, cache_file=args.cache_file, color_method=args.color_method)
+                         cache_only=args.cache_only, cache_dir=args.cache_dir, color_method=args.color_method)
 
     if not args.cache_only:
         app.run()
