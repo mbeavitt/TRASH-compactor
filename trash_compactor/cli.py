@@ -137,12 +137,20 @@ class TRASHCompactor:
                 print("Cache created successfully!")
                 return
         else:
-            # Still need to filter repeats table for visualization later
+            # Still need to filter repeats table for visualization and on-demand sequence extraction
             original_count = len(self.repeats_table)
             self.repeats_table = self.repeats_table[
                 self.repeats_table['seq_name'] == self.seq_name
             ].copy()
             print(f"Loaded {len(self.repeats_table)} repeats from repeats table (for visualization)")
+
+            # IMPORTANT: Set up repeat data structures for on-demand sequence extraction
+            print("  Preparing repeat data structures for on-demand sequence extraction...")
+            self.repeats_table = self.repeats_table.sort_values('start').reset_index(drop=True)
+            self.repeat_starts = self.repeats_table['start'].values
+            self.repeat_ends = self.repeats_table['end'].values
+            self.repeat_seqs = self.repeats_table['sequence'].values
+            self.repeat_positions = self.repeats_table['start'].values
 
         print("\nComputing global repeat colors...")
         self._compute_global_colors()
@@ -375,12 +383,23 @@ class TRASHCompactor:
         if hasattr(self, 'unique_sequences'):
             self.global_repeats = sorted(self.unique_sequences)
         else:
-            # Fallback for legacy cached data that has sequences stored
+            # Fallback: extract sequences from positions (for cached data)
+            print("  Extracting unique sequences from cached positions...")
             all_sequences = set()
-            for _, row in self.hor_table.iterrows():
-                if 'block_A_sequence' in row and 'block_B_sequence' in row:
+
+            # Check if we have sequence columns (legacy cache)
+            if 'block_A_sequence' in self.hor_table.columns:
+                for _, row in self.hor_table.iterrows():
                     all_sequences.update(row['block_A_sequence'])
                     all_sequences.update(row['block_B_sequence'])
+            else:
+                # New cache format: extract sequences on-demand using positions
+                for _, row in self.hor_table.iterrows():
+                    seqs_A, _ = self._get_block_sequences(row['block_A_start'], row['block_A_end'])
+                    seqs_B, _ = self._get_block_sequences(row['block_B_start'], row['block_B_end'])
+                    all_sequences.update(seqs_A)
+                    all_sequences.update(seqs_B)
+
             self.global_repeats = sorted(list(all_sequences))
 
         n_global = len(self.global_repeats)
