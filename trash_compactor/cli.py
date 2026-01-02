@@ -266,26 +266,19 @@ class TRASHCompactor:
         n_unique = len(unique_sequences)
         print(f"    Found {n_unique} unique sequences")
 
-        # Pre-compute distance matrix (upper triangle only)
-        print(f"    Computing {n_unique * (n_unique - 1) // 2:,} pairwise distances...")
-        distance_cache = {}
+        # Pre-compute distance matrix directly in NumPy (avoids 1.2GB intermediate dict)
+        print(f"    Computing {n_unique * (n_unique - 1) // 2:,} pairwise distances directly to NumPy matrix...")
+        seq_to_id = {seq: i for i, seq in enumerate(unique_sequences)}
+        distance_matrix = np.zeros((n_unique, n_unique), dtype=np.float32)
+
         for i in range(n_unique):
             for j in range(i + 1, n_unique):
                 seq_i, seq_j = unique_sequences[i], unique_sequences[j]
                 dist = Levenshtein.distance(seq_i, seq_j)
-                # Store both orderings for easy lookup
-                distance_cache[(seq_i, seq_j)] = dist
-                distance_cache[(seq_j, seq_i)] = dist
+                # Symmetric matrix - set both [i,j] and [j,i]
+                distance_matrix[i, j] = dist
+                distance_matrix[j, i] = dist
 
-        # PHASE 2 OPTIMIZATION: Convert distance_cache to NumPy array for faster lookups
-        print("    Converting distance cache to NumPy matrix for faster access...")
-        seq_to_id = {seq: i for i, seq in enumerate(unique_sequences)}
-        distance_matrix = np.zeros((n_unique, n_unique), dtype=np.float32)
-
-        # Populate distance matrix from cache
-        for (seq_i, seq_j), dist in distance_cache.items():
-            i, j = seq_to_id[seq_i], seq_to_id[seq_j]
-            distance_matrix[i, j] = dist
 
         print("  Calculating inter-block similarity (using matrix lookups)...")
         # Inter-block similarity
