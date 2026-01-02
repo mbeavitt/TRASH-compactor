@@ -149,10 +149,26 @@ class TRASHCompactor:
 
         self.current_selection = None
 
+    def _get_block_sequences(self, block_start, block_end):
+        """
+        Extract sequences for a block on-demand from repeats table.
+        Returns (sequences, positions) tuple.
+        """
+        return utils.get_repeats_in_range_fast(
+            self.repeat_starts,
+            self.repeat_ends,
+            self.repeat_seqs,
+            self.repeat_positions,
+            block_start,
+            block_end
+        )
+
     def _calculate_metrics(self):
         """Calculate all HOR quality metrics"""
 
         # Extract block sequences and positions from repeats table
+        # NOTE: We keep sequences in temporary lists for metric calculation,
+        # but DON'T store them in DataFrame to save ~400-500 MB
         block_A_sequences = []
         block_B_sequences = []
         block_A_positions = []
@@ -163,21 +179,13 @@ class TRASHCompactor:
 
         for hor_num, (idx, row) in enumerate(self.hor_table.iterrows(), 1):
             # Get repeats for block A with positions (using fast binary search)
-            repeats_A, pos_A = utils.get_repeats_in_range_fast(
-                self.repeat_starts,
-                self.repeat_ends,
-                self.repeat_seqs,
-                self.repeat_positions,
+            repeats_A, pos_A = self._get_block_sequences(
                 row['block_A_start'],
                 row['block_A_end']
             )
 
             # Get repeats for block B with positions (using fast binary search)
-            repeats_B, pos_B = utils.get_repeats_in_range_fast(
-                self.repeat_starts,
-                self.repeat_ends,
-                self.repeat_seqs,
-                self.repeat_positions,
+            repeats_B, pos_B = self._get_block_sequences(
                 row['block_B_start'],
                 row['block_B_end']
             )
@@ -192,16 +200,15 @@ class TRASHCompactor:
                 percent = (hor_num / total_hors) * 100
                 print(f"  Processed {hor_num:,}/{total_hors:,} HORs ({percent:.1f}%)")
 
-        print("  Adding sequences and positions to table...")
-        self.hor_table['block_A_sequence'] = block_A_sequences
-        self.hor_table['block_B_sequence'] = block_B_sequences
+        print("  Storing positions (not sequences) to save memory...")
+        # MEMORY OPTIMIZATION: Only store positions, not sequences (~400-500 MB savings)
         self.hor_table['block_A_positions'] = block_A_positions
         self.hor_table['block_B_positions'] = block_B_positions
 
         print("  Calculating repeat counts...")
-        # Add columns for actual repeat counts found
-        self.hor_table['actual_repeats_A'] = self.hor_table['block_A_sequence'].apply(len)
-        self.hor_table['actual_repeats_B'] = self.hor_table['block_B_sequence'].apply(len)
+        # Add columns for actual repeat counts found (from temporary lists)
+        self.hor_table['actual_repeats_A'] = [len(seqs) for seqs in block_A_sequences]
+        self.hor_table['actual_repeats_B'] = [len(seqs) for seqs in block_B_sequences]
 
         print("  Flagging mismatches...")
         # Flag HORs with repeat count mismatches
@@ -220,9 +227,9 @@ class TRASHCompactor:
             print(f"      (actual vs expected from HOR table - see 'repeat_mismatch_A/B' columns)")
 
         print("  Calculating unique monomers...")
-        # Calculate unique monomers
-        self.hor_table['unique_monomers_A'] = self.hor_table['block_A_sequence'].apply(lambda x: len(set(x)))
-        self.hor_table['unique_monomers_B'] = self.hor_table['block_B_sequence'].apply(lambda x: len(set(x)))
+        # Calculate unique monomers (from temporary lists)
+        self.hor_table['unique_monomers_A'] = [len(set(seqs)) for seqs in block_A_sequences]
+        self.hor_table['unique_monomers_B'] = [len(set(seqs)) for seqs in block_B_sequences]
 
         print("  Calculating block quality metrics...")
         # Block quality
@@ -255,16 +262,19 @@ class TRASHCompactor:
         self.hor_table['block_gap_units'] = self.hor_table.apply(calc_gap, axis=1)
 
         print("  Pre-computing Levenshtein distance matrix for unique sequences...")
-        # Collect all unique sequences
+        # Collect all unique sequences (from temporary lists)
         all_sequences = set()
-        for sequences in self.hor_table['block_A_sequence']:
+        for sequences in block_A_sequences:
             all_sequences.update(sequences)
-        for sequences in self.hor_table['block_B_sequence']:
+        for sequences in block_B_sequences:
             all_sequences.update(sequences)
 
         unique_sequences = list(all_sequences)
         n_unique = len(unique_sequences)
         print(f"    Found {n_unique} unique sequences")
+
+        # Store unique sequences for later use (e.g., global color computation)
+        self.unique_sequences = unique_sequences
 
         # Pre-compute distance matrix directly in NumPy (avoids 1.2GB intermediate dict)
         print(f"    Computing {n_unique * (n_unique - 1) // 2:,} pairwise distances directly to NumPy matrix...")
@@ -281,12 +291,12 @@ class TRASHCompactor:
 
 
         print("  Calculating inter-block similarity (using matrix lookups)...")
-        # Inter-block similarity
-        def calc_similarity(row):
-            block_A = row['block_A_sequence']
-            block_B = row['block_B_sequence']
+        # Inter-block similarity (using temporary lists)
+        position_wise_distances = []
+        for block_A, block_B in zip(block_A_sequences, block_B_sequences):
             if len(block_A) == 0 or len(block_B) == 0:
-                return 0
+                position_wise_distances.append(0)
+                continue
             min_len = min(len(block_A), len(block_B))
             # Use pre-allocated array and matrix indexing for performance
             distances = np.empty(min_len, dtype=np.float32)
@@ -294,18 +304,16 @@ class TRASHCompactor:
                 seq_a_id = seq_to_id[block_A[i]]
                 seq_b_id = seq_to_id[block_B[i]]
                 distances[i] = distance_matrix[seq_a_id, seq_b_id]
-            return distances.mean() if min_len > 0 else 0
+            position_wise_distances.append(distances.mean() if min_len > 0 else 0)
 
-        self.hor_table['position_wise_distance'] = self.hor_table.apply(calc_similarity, axis=1)
+        self.hor_table['position_wise_distance'] = position_wise_distances
         self.hor_table['hor_similarity'] = 1 / (1 + self.hor_table['position_wise_distance'])
 
-        print("  Calculating internal diversity (using matrix lookups)...")
-        # Calculate internal diversity within each block
-        def calc_internal_diversity(row):
-            """Average pairwise distance within a block"""
-            block_A = row['block_A_sequence']
-            block_B = row['block_B_sequence']
 
+        print("  Calculating internal diversity (using matrix lookups)...")
+        # Calculate internal diversity within each block (using temporary lists)
+        internal_diversities = []
+        for block_A, block_B in zip(block_A_sequences, block_B_sequences):
             # Internal diversity for block A
             if len(block_A) > 1:
                 # Pre-allocate numpy array for performance (avoids 496M list.append calls)
@@ -340,10 +348,11 @@ class TRASHCompactor:
             else:
                 diversity_B = 0
 
-            # Return max internal diversity (most diverse block)
-            return max(diversity_A, diversity_B)
+            # Append max internal diversity (most diverse block)
+            internal_diversities.append(max(diversity_A, diversity_B))
 
-        self.hor_table['internal_diversity'] = self.hor_table.apply(calc_internal_diversity, axis=1)
+        self.hor_table['internal_diversity'] = internal_diversities
+
 
         print("  Calculating diversity-similarity scores...")
         # Diversity-similarity score: high internal diversity + high inter-block similarity + large size
@@ -361,13 +370,19 @@ class TRASHCompactor:
     def _compute_global_colors(self):
         """Compute global color mapping for all unique repeats across dataset"""
 
-        # Collect all unique repeats across all HORs
-        all_sequences = set()
-        for _, row in self.hor_table.iterrows():
-            all_sequences.update(row['block_A_sequence'])
-            all_sequences.update(row['block_B_sequence'])
+        # Use unique sequences computed during metric calculation
+        # (avoids re-extracting sequences from DataFrame which no longer stores them)
+        if hasattr(self, 'unique_sequences'):
+            self.global_repeats = sorted(self.unique_sequences)
+        else:
+            # Fallback for legacy cached data that has sequences stored
+            all_sequences = set()
+            for _, row in self.hor_table.iterrows():
+                if 'block_A_sequence' in row and 'block_B_sequence' in row:
+                    all_sequences.update(row['block_A_sequence'])
+                    all_sequences.update(row['block_B_sequence'])
+            self.global_repeats = sorted(list(all_sequences))
 
-        self.global_repeats = sorted(list(all_sequences))
         n_global = len(self.global_repeats)
 
         print(f"  Found {n_global} unique repeat sequences across all HORs")
@@ -445,10 +460,15 @@ class TRASHCompactor:
         row = self.hor_table.iloc[hor_idx]
 
         # Get block sequences and positions
-        block_A_repeats = row['block_A_sequence']
-        block_B_repeats = row['block_B_sequence']
-        block_A_pos = row['block_A_positions']
-        block_B_pos = row['block_B_positions']
+        # Extract sequences on-demand (not stored in DataFrame to save memory)
+        block_A_repeats, block_A_pos = self._get_block_sequences(
+            row['block_A_start'],
+            row['block_A_end']
+        )
+        block_B_repeats, block_B_pos = self._get_block_sequences(
+            row['block_B_start'],
+            row['block_B_end']
+        )
 
         # Get expected count and block boundaries
         expected_count = int(row['block.size.in.units'])

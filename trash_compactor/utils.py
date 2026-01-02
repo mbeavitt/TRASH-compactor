@@ -235,9 +235,11 @@ def load_cache(cache_path):
             df = pd.read_csv(cache_path)
 
             # Convert string representations of lists back to actual lists
-            # These columns contain lists that need to be parsed
-            list_columns = ['block_A_sequence', 'block_B_sequence', 'block_A_positions', 'block_B_positions']
-            for col in list_columns:
+            # Note: Newer caches don't store sequences (only positions) to save memory
+            list_columns = ['block_A_positions', 'block_B_positions']
+            # Legacy support: old caches may have sequence columns
+            legacy_columns = ['block_A_sequence', 'block_B_sequence']
+            for col in list_columns + legacy_columns:
                 if col in df.columns:
                     df[col] = df[col].apply(eval)
 
