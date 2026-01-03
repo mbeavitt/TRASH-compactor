@@ -196,11 +196,11 @@ def calculate_input_hash(hor_table_path, fasta_path, repeats_table_path):
     return hasher.hexdigest()
 
 
-def get_cache_path(input_hash, cache_dir=None, fasta_path=None):
+def get_cache_path(input_hash, cache_dir=None, fasta_path=None, chromosome=None):
     """
     Get the cache file path for a given input hash.
     Cache is stored in current working directory by default.
-    Uses FASTA filename + short hash for readability.
+    Uses FASTA filename + chromosome + short hash for readability.
     """
     if cache_dir is None:
         cache_dir = os.path.join(os.getcwd(), '.trash_compactor_cache')
@@ -215,8 +215,11 @@ def get_cache_path(input_hash, cache_dir=None, fasta_path=None):
             fasta_basename = fasta_basename[:-6]
         elif fasta_basename.endswith('.fa'):
             fasta_basename = fasta_basename[:-3]
-        # Use first 8 chars of hash for verification
-        cache_name = f'{fasta_basename}_{input_hash[:8]}.csv'
+        # Include chromosome in filename if specified
+        if chromosome:
+            cache_name = f'{fasta_basename}_{chromosome}_{input_hash[:8]}.csv'
+        else:
+            cache_name = f'{fasta_basename}_{input_hash[:8]}.csv'
     else:
         # Fallback to full hash
         cache_name = f'hor_table_{input_hash}.csv'

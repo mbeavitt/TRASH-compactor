@@ -49,7 +49,7 @@ class TRASHCompactor:
         input_hash = utils.calculate_input_hash(hor_table_path, fasta_path, repeats_table_path)
         t1 = time.time()
         print(f"  Hash calculated in {t1-t0:.2f}s: {input_hash[:16]}...")
-        cache_path = utils.get_cache_path(input_hash, cache_dir=cache_dir, fasta_path=fasta_path)
+        cache_path = utils.get_cache_path(input_hash, cache_dir=cache_dir, fasta_path=fasta_path, chromosome=chromosome)
         print(f"  Cache location: {cache_path}")
 
         # Try to load from cache
